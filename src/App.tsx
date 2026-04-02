@@ -5,7 +5,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
-import { Play, Loader2, Volume2, Download, Sparkles, Mic, Music, UploadCloud, Image as ImageIcon, CheckCircle2, Settings2 } from 'lucide-react';
+import { Play, Loader2, Volume2, Download, Sparkles, UploadCloud, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -52,7 +52,7 @@ function createWavBlob(base64Data: string, sampleRate: number = 24000): Blob {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'tts' | 'clone' | 'music'>('tts');
+  const [activeTab, setActiveTab] = useState<'tts'>('tts');
   const [text, setText] = useState('');
   const [gender, setGender] = useState<'Male' | 'Female'>('Male');
   const [voice, setVoice] = useState(VOICES['Male'][0]);
@@ -62,32 +62,13 @@ export default function App() {
   const [effect, setEffect] = useState('None');
   const [backgroundEffect, setBackgroundEffect] = useState('None');
   
-  const [musicPrompt, setMusicPrompt] = useState('');
-  const [cloneFile, setCloneFile] = useState<File | null>(null);
-  const [cloneText, setCloneText] = useState('');
-  const [pitch, setPitch] = useState(1);
-  const [speed, setSpeed] = useState(1);
-  
   const [isGenerating, setIsGenerating] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [appIcon, setAppIcon] = useState<string | null>(null);
   
   const audioRef = useRef<HTMLAudioElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const iconInputRef = useRef<HTMLInputElement>(null);
-
-  // Apply pitch and speed to audio element
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.playbackRate = speed;
-      // @ts-ignore - preservesPitch is supported in modern browsers
-      audioRef.current.preservesPitch = pitch === 1; 
-      if (pitch !== 1) {
-         audioRef.current.playbackRate = speed * pitch;
-      }
-    }
-  }, [speed, pitch, audioUrl]);
 
   const handleIconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) setAppIcon(URL.createObjectURL(e.target.files[0]));
@@ -126,78 +107,6 @@ export default function App() {
     generateSpeech(finalPrompt, voice);
   };
 
-  const handleGenerateClone = async () => {
-    if (!cloneText.trim() || !cloneFile) return;
-    setIsGenerating(true); setError(null); setAudioUrl(null);
-    try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64Data = (reader.result as string).split(',')[1];
-        try {
-          const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash-preview-tts",
-            contents: [
-              {
-                parts: [
-                  { inlineData: { data: base64Data, mimeType: cloneFile.type } },
-                  { text: `Mimic the voice in the audio and speak: ${cloneText}` }
-                ]
-              }
-            ],
-            config: {
-              responseModalities: [Modality.AUDIO],
-              speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
-            },
-          });
-
-          const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-          if (base64Audio) {
-            setAudioUrl(URL.createObjectURL(createWavBlob(base64Audio, 24000)));
-          } else setError("No audio data returned.");
-        } catch (err: any) {
-          setError(err.message || "Error generating audio.");
-        } finally { setIsGenerating(false); }
-      };
-      reader.readAsDataURL(cloneFile);
-    } catch (err: any) {
-      setError(err.message || "Error reading file.");
-      setIsGenerating(false);
-    }
-  };
-
-  const handleGenerateMusic = async () => {
-    if (!musicPrompt.trim()) return;
-    setIsGenerating(true); setError(null); setAudioUrl(null);
-    try {
-      const response = await ai.models.generateContentStream({
-        model: "lyria-3-clip-preview",
-        contents: musicPrompt,
-      });
-
-      let audioBase64 = "";
-      let mimeType = "audio/wav";
-      for await (const chunk of response) {
-        const parts = chunk.candidates?.[0]?.content?.parts;
-        if (!parts) continue;
-        for (const part of parts) {
-          if (part.inlineData?.data) {
-            if (!audioBase64 && part.inlineData.mimeType) mimeType = part.inlineData.mimeType;
-            audioBase64 += part.inlineData.data;
-          }
-        }
-      }
-
-      if (audioBase64) {
-        const binary = atob(audioBase64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        setAudioUrl(URL.createObjectURL(new Blob([bytes], { type: mimeType })));
-      } else setError("No audio data returned.");
-    } catch (err: any) {
-      setError(err.message || "Error generating music.");
-    } finally { setIsGenerating(false); }
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 text-slate-900 font-sans selection:bg-indigo-500/30">
       <header className="bg-white/60 backdrop-blur-xl sticky top-0 z-50 border-b border-slate-200/60 shadow-sm">
@@ -227,9 +136,7 @@ export default function App() {
           
           <nav className="hidden sm:flex items-center gap-2 bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200">
             {[
-              { id: 'tts', label: 'Speech Synthesis', icon: Volume2 },
-              { id: 'clone', label: 'Voice Clone', icon: Mic },
-              { id: 'music', label: 'BGM Maker', icon: Music }
+              { id: 'tts', label: 'Speech Synthesis', icon: Volume2 }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -344,133 +251,7 @@ export default function App() {
             </motion.div>
           )}
 
-          {activeTab === 'clone' && (
-            <motion.div
-              key="clone"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-8"
-            >
-              <div className="bg-white border border-slate-200 rounded-[2rem] p-6 sm:p-8 shadow-xl shadow-slate-200/50 space-y-8">
-                <div className="text-center space-y-2 mb-8">
-                  <h2 className="text-2xl font-display font-bold text-slate-900">Advanced Voice Cloning</h2>
-                  <p className="text-slate-500">Upload a sample and fine-tune the cloned voice characteristics.</p>
-                </div>
 
-                <div 
-                  className={`border-2 border-dashed rounded-[2rem] p-8 text-center transition-all cursor-pointer ${
-                    cloneFile ? 'border-indigo-400 bg-indigo-50' : 'border-slate-300 hover:border-slate-400 hover:bg-slate-50'
-                  }`}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  {cloneFile ? (
-                    <div className="flex flex-col items-center space-y-3">
-                      <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center">
-                        <CheckCircle2 className="w-8 h-8 text-indigo-600" />
-                      </div>
-                      <p className="text-indigo-700 font-semibold">{cloneFile.name}</p>
-                      <p className="text-slate-500 text-sm">Click to change file</p>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center space-y-4">
-                      <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center">
-                        <UploadCloud className="w-8 h-8 text-slate-500" />
-                      </div>
-                      <div>
-                        <p className="text-slate-700 font-semibold text-lg">Upload Reference Audio</p>
-                        <p className="text-slate-500 text-sm mt-1">MP3, WAV up to 10MB (Clear voice, no background noise)</p>
-                      </div>
-                    </div>
-                  )}
-                  <input type="file" ref={fileInputRef} onChange={(e) => setCloneFile(e.target.files?.[0] || null)} accept="audio/*" className="hidden" />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-slate-50 p-6 rounded-2xl border border-slate-200">
-                  <div className="space-y-4">
-                    <div className="flex justify-between">
-                      <label className="text-sm font-semibold text-slate-700 flex items-center gap-2"><Settings2 className="w-4 h-4"/> Pitch Adjustment</label>
-                      <span className="text-sm text-indigo-600 font-medium">{pitch.toFixed(2)}x</span>
-                    </div>
-                    <input type="range" min="0.5" max="2" step="0.1" value={pitch} onChange={(e) => setPitch(parseFloat(e.target.value))} className="w-full accent-indigo-600" />
-                  </div>
-                  <div className="space-y-4">
-                    <div className="flex justify-between">
-                      <label className="text-sm font-semibold text-slate-700 flex items-center gap-2"><Settings2 className="w-4 h-4"/> Speed Control</label>
-                      <span className="text-sm text-indigo-600 font-medium">{speed.toFixed(2)}x</span>
-                    </div>
-                    <input type="range" min="0.5" max="2" step="0.1" value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))} className="w-full accent-indigo-600" />
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <label className="block text-sm font-semibold text-slate-700">Text to Speak</label>
-                  <textarea
-                    rows={4}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-5 text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all resize-none shadow-inner"
-                    placeholder="Enter text for the cloned voice..."
-                    value={cloneText}
-                    onChange={(e) => setCloneText(e.target.value)}
-                  />
-                </div>
-
-                <button
-                  onClick={handleGenerateClone}
-                  disabled={isGenerating || !cloneText.trim() || !cloneFile}
-                  className="w-full flex items-center justify-center py-4 px-6 rounded-2xl text-base font-bold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-indigo-500/30"
-                >
-                  {isGenerating ? (
-                    <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Cloning & Generating...</>
-                  ) : (
-                    <><Mic className="w-5 h-5 mr-2" /> Generate with Cloned Voice</>
-                  )}
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {activeTab === 'music' && (
-            <motion.div
-              key="music"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-8"
-            >
-              <div className="bg-white border border-slate-200 rounded-[2rem] p-6 sm:p-8 shadow-xl shadow-slate-200/50 space-y-8">
-                <div className="text-center space-y-2 mb-8">
-                  <div className="inline-flex items-center justify-center p-4 bg-fuchsia-100 rounded-full mb-4">
-                    <Music className="w-8 h-8 text-fuchsia-600" />
-                  </div>
-                  <h2 className="text-2xl font-display font-bold text-slate-900">Royalty-Free BGM Maker</h2>
-                  <p className="text-slate-500">Generate high-quality background music for your speeches.</p>
-                </div>
-
-                <div className="space-y-3">
-                  <label className="block text-sm font-semibold text-slate-700">Describe your music</label>
-                  <textarea
-                    rows={4}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-5 text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-fuchsia-500/50 focus:border-fuchsia-500/50 transition-all resize-none text-lg shadow-inner"
-                    placeholder="e.g., A cinematic orchestral track with a slow buildup, perfect for a motivational speech..."
-                    value={musicPrompt}
-                    onChange={(e) => setMusicPrompt(e.target.value)}
-                  />
-                </div>
-
-                <button
-                  onClick={handleGenerateMusic}
-                  disabled={isGenerating || !musicPrompt.trim()}
-                  className="w-full flex items-center justify-center py-4 px-6 rounded-2xl text-base font-bold text-white bg-fuchsia-600 hover:bg-fuchsia-700 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-fuchsia-500/30"
-                >
-                  {isGenerating ? (
-                    <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Composing Music...</>
-                  ) : (
-                    <><Music className="w-5 h-5 mr-2" /> Generate Background Music</>
-                  )}
-                </button>
-              </div>
-            </motion.div>
-          )}
         </AnimatePresence>
 
         {error && (
@@ -502,7 +283,7 @@ export default function App() {
                 <div className="flex-shrink-0 w-full sm:w-auto">
                    <a
                     href={audioUrl}
-                    download={`jahids-voice-${activeTab}-${Date.now()}.wav`}
+                    download={`jahids-voice-tts-${Date.now()}.wav`}
                     className="w-full sm:w-auto flex items-center justify-center p-3.5 bg-slate-900 text-white hover:bg-slate-800 rounded-xl transition-colors font-semibold shadow-md"
                   >
                     <Download className="w-5 h-5 sm:mr-0 mr-2" />
