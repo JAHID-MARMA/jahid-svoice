@@ -5,10 +5,22 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
-import { Play, Loader2, Volume2, Download, Sparkles, UploadCloud, Image as ImageIcon } from 'lucide-react';
+import { Play, Loader2, Volume2, Download, Sparkles, UploadCloud, Image as ImageIcon, Bookmark, Save, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+export interface Preset {
+  id: string;
+  name: string;
+  gender: 'Male' | 'Female';
+  voice: string;
+  language: string;
+  emotion: string;
+  age: string;
+  effect: string;
+  backgroundEffect: string;
+}
 
 const VOICES = {
   Male: ['Charon', 'Fenrir'],
@@ -62,6 +74,10 @@ export default function App() {
   const [effect, setEffect] = useState('None');
   const [backgroundEffect, setBackgroundEffect] = useState('None');
   
+  const [presets, setPresets] = useState<Preset[]>([]);
+  const [showPresetModal, setShowPresetModal] = useState(false);
+  const [newPresetName, setNewPresetName] = useState('');
+
   const [isGenerating, setIsGenerating] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +88,47 @@ export default function App() {
 
   const handleIconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) setAppIcon(URL.createObjectURL(e.target.files[0]));
+  };
+
+  useEffect(() => {
+    const saved = localStorage.getItem('jahids-voice-presets');
+    if (saved) {
+      try {
+        setPresets(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to load presets', e);
+      }
+    }
+  }, []);
+
+  const savePreset = () => {
+    if (!newPresetName.trim()) return;
+    const newPreset: Preset = {
+      id: Date.now().toString(),
+      name: newPresetName.trim(),
+      gender,
+      voice,
+      language,
+      emotion,
+      age,
+      effect,
+      backgroundEffect
+    };
+    const updatedPresets = [...presets, newPreset];
+    setPresets(updatedPresets);
+    localStorage.setItem('jahids-voice-presets', JSON.stringify(updatedPresets));
+    setNewPresetName('');
+    setShowPresetModal(false);
+  };
+
+  const loadPreset = (preset: Preset) => {
+    setGender(preset.gender);
+    setVoice(preset.voice);
+    setLanguage(preset.language);
+    setEmotion(preset.emotion);
+    setAge(preset.age);
+    setEffect(preset.effect);
+    setBackgroundEffect(preset.backgroundEffect);
   };
 
   const generateSpeech = async (promptText: string, selectedVoice: string) => {
@@ -166,6 +223,35 @@ export default function App() {
               className="space-y-8"
             >
               <div className="bg-white border border-slate-200 rounded-[2rem] p-6 sm:p-8 shadow-xl shadow-slate-200/50 space-y-8">
+                
+                {/* Presets Section */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100 gap-4">
+                  <div className="flex items-center gap-3 w-full sm:w-auto">
+                    <Bookmark className="w-5 h-5 text-indigo-600 flex-shrink-0" />
+                    <select
+                      className="w-full sm:w-auto bg-white border border-slate-200 rounded-xl p-2.5 text-sm text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm min-w-[200px]"
+                      onChange={(e) => {
+                        const p = presets.find(p => p.id === e.target.value);
+                        if (p) loadPreset(p);
+                        e.target.value = ""; // reset after load
+                      }}
+                      defaultValue=""
+                    >
+                      <option value="" disabled>Load a preset...</option>
+                      {presets.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    onClick={() => setShowPresetModal(true)}
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-indigo-200 text-indigo-600 rounded-xl text-sm font-semibold hover:bg-indigo-50 transition-colors shadow-sm"
+                  >
+                    <Save className="w-4 h-4" />
+                    Save Current Settings
+                  </button>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
                   <div className="space-y-3">
                     <label className="block text-sm font-semibold text-slate-700">Language</label>
@@ -295,6 +381,53 @@ export default function App() {
           )}
         </AnimatePresence>
       </main>
+
+      {/* Preset Modal */}
+      <AnimatePresence>
+        {showPresetModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl"
+            >
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-bold text-slate-900">Save Preset</h3>
+                <button onClick={() => setShowPresetModal(false)} className="text-slate-400 hover:text-slate-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <input
+                type="text"
+                placeholder="Preset Name (e.g., Deep Cinematic)"
+                value={newPresetName}
+                onChange={(e) => setNewPresetName(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none mb-6"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newPresetName.trim()) savePreset();
+                }}
+              />
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setShowPresetModal(false)}
+                  className="px-4 py-2 text-slate-600 font-semibold hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={savePreset}
+                  disabled={!newPresetName.trim()}
+                  className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-md"
+                >
+                  Save
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
